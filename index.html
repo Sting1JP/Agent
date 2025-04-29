@@ -1,0 +1,350 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Shadaloo Terminal</title>
+  <style>
+    html, body {
+      margin: 0;
+      padding: 0;
+      background: #000;
+      color: #00ffcc;
+      font-family: 'Courier New', monospace;
+      height: 100%;
+      overflow: hidden;
+    }
+
+    .crt {
+      position: absolute;
+      inset: 0;
+      background: repeating-linear-gradient(
+        0deg,
+        rgba(0, 255, 204, 0.03),
+        rgba(0, 255, 204, 0.03) 1px,
+        transparent 1px,
+        transparent 2px
+      );
+      pointer-events: none;
+      z-index: 1000;
+    }
+
+    .terminal {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      grid-template-rows: 1fr 1fr;
+      height: 100%;
+      padding: 20px;
+      box-sizing: border-box;
+      gap: 20px;
+    }
+
+    .section {
+      border: 1px solid #00ffcc55;
+      padding: 10px;
+      overflow: auto;
+      position: relative;
+    }
+
+    .section h2 {
+      color: #00ffcc;
+      font-size: 1em;
+      margin: 0 0 10px 0;
+      border-bottom: 1px dashed #00ffcc33;
+    }
+
+    .intel-line {
+      margin-bottom: 6px;
+    }
+
+    #signalLog {
+      font-size: 0.9em;
+      line-height: 1.4em;
+      max-height: 150px;
+      overflow-y: auto;
+    }
+
+    .signal-buttons button {
+      margin-right: 10px;
+      margin-bottom: 5px;
+      background: #000;
+      border: 1px solid #00ffcc;
+      color: #00ffcc;
+      font-family: inherit;
+      cursor: pointer;
+    }
+
+    .console-log {
+      font-size: 0.85em;
+      height: 100px;
+      overflow-y: auto;
+      background: #000;
+      border: 1px solid #00ffcc33;
+      padding: 5px;
+    }
+
+    .console-input {
+      margin-top: 5px;
+      display: flex;
+    }
+
+    .console-input input {
+      flex: 1;
+      background: #000;
+      border: 1px solid #00ffcc;
+      color: #00ffcc;
+      padding: 4px;
+      font-family: inherit;
+    }
+
+    .console-input button {
+      background: #00ffcc;
+      color: #000;
+      border: none;
+      padding: 4px 10px;
+      cursor: pointer;
+    }
+
+    #signalWave {
+      display: flex;
+      gap: 2px;
+      margin-bottom: 10px;
+      height: 40px;
+    }
+
+    #signalWave div {
+      width: 4px;
+      background: #00f4ff;
+      transition: height 0.2s ease, opacity 0.2s ease;
+    }
+
+    #feedback {
+      margin-top: 10px;
+      font-size: 0.9em;
+      color: #ff5555;
+    }
+
+    #corruptionWarning {
+      display: none;
+      position: absolute;
+      top: 5px;
+      right: 10px;
+      color: #ff0055;
+      font-weight: bold;
+      animation: blink 1s infinite;
+    }
+
+    @keyframes blink {
+      0% { opacity: 1; }
+      50% { opacity: 0; }
+      100% { opacity: 1; }
+    }
+  </style>
+</head>
+<body>
+
+<div class="terminal">
+  <!-- INTEL FEED -->
+  <div class="section">
+    <h2>[ INTEL FEED ]</h2>
+    <div class="intel-line">> UPTIME............................. 211d 13h 42m</div>
+    <div class="intel-line">> BANDWIDTH (LAST 1H)............... 3.91 TB</div>
+    <div class="intel-line">> QUERY INDEX....................... [█▒▒▒▒▒▒▒▒▒▒] 12%</div>
+    <div class="intel-line">> LAST BREACH....................... [403.89.44 / NULL ZONE]</div>
+  </div>
+
+  <!-- MESSAGE CONSOLE -->
+  <div class="section">
+    <h2>[ AGENT MESSAGE CONSOLE ]</h2>
+    <div id="consoleLog" class="console-log"></div>
+    <div class="console-input">
+      <input id="consoleInput" type="text" placeholder="Post anonymously..." />
+      <button onclick="postConsole()">Send</button>
+    </div>
+  </div>
+
+  <!-- SIGNAL CLASSIFICATION -->
+  <div class="section" style="grid-column: span 2;">
+    <h2>[ SIGNAL CLASSIFICATION ]</h2>
+    <div id="corruptionWarning">!! CORRUPTED SIGNAL !!</div>
+
+    <div style="margin-bottom: 10px;">
+      <div>Signals Processed: <span id="signalCount">0</span> / 100</div>
+      <div style="background: #003333; height: 10px; margin-top: 4px; width: 100%;">
+        <div id="progressBar" style="height: 100%; background: #00ffcc; width: 0%;"></div>
+      </div>
+    </div>
+    <div style="margin-bottom: 10px; font-size: 0.85em;">
+      Last Processed By: <span id="lastAgent">—</span> | Integrity Index: <span id="integrity">100%</span>
+    </div>
+
+    <div id="downloadingText" style="margin-bottom: 10px; color: #00aa99;">Downloading signal...</div>
+    <div id="signalWave"></div>
+    <div id="signalString">Incoming Signal: [█████████████████████]</div>
+
+    <div class="signal-buttons">
+      <button onclick="classify('RECLASSIFIED AS NOISE')">Reclassify as Noise</button>
+      <button onclick="classify('ARCHIVED FOR REVIEW')">Archive for Review</button>
+      <button onclick="classify('ESCALATED TO OPS')">Escalate to Ops</button>
+    </div>
+
+    <div id="feedback"></div>
+    <div id="signalLog"></div>
+  </div>
+</div>
+
+<div class="crt"></div>
+
+<script>
+  const consoleLog = document.getElementById('consoleLog');
+  const signalLog = document.getElementById('signalLog');
+  const signalDisplay = document.getElementById('signalString');
+  const downloadingText = document.getElementById('downloadingText');
+  const signalWave = document.getElementById('signalWave');
+  const feedback = document.getElementById('feedback');
+  const corruptionWarning = document.getElementById('corruptionWarning');
+  const codename = localStorage.getItem('dailyCodename') || 'Specter Viper';
+
+  let totalSignals = parseInt(localStorage.getItem('shad_signals')) || 0;
+  let integrity = parseInt(localStorage.getItem('shad_integrity')) || 100;
+  document.getElementById('signalCount').innerText = totalSignals;
+  document.getElementById('integrity').innerText = `${integrity}%`;
+  updateProgressBar();
+
+  let expectedClassification = '';
+  let isCorrupted = false;
+
+  const randomSignal = () => {
+    const chars = 'ABCDEF0123456789';
+    let result = '';
+    for (let i = 0; i < 8; i++) result += chars[Math.floor(Math.random() * chars.length)];
+    return `SIGNAL ${result}`;
+  };
+
+  function classify(action) {
+    if (isCorrupted) {
+      feedback.style.color = "#ff5555";
+      feedback.innerText = "⚠ Signal Corrupted! Unable to classify.";
+      integrity = Math.max(0, integrity - 5);
+      document.getElementById('integrity').innerText = `${integrity}%`;
+    } else if (expectedClassification) {
+      if (action === expectedClassification) {
+        feedback.style.color = "#00ff88";
+        feedback.innerText = "✔ Correct classification.";
+      } else {
+        feedback.style.color = "#ff5555";
+        feedback.innerText = `❌ Misclassified! Expected: ${expectedClassification}`;
+        integrity = Math.max(0, integrity - 2);
+        document.getElementById('integrity').innerText = `${integrity}%`;
+      }
+    }
+
+    const sig = randomSignal();
+    const entry = `> ${sig} - ${action}`;
+    signalLog.innerHTML += `<div>${entry}</div>`;
+    signalLog.scrollTop = signalLog.scrollHeight;
+
+    totalSignals++;
+    localStorage.setItem('shad_signals', totalSignals);
+    document.getElementById('signalCount').innerText = totalSignals;
+    updateProgressBar();
+
+    const timestamp = new Date().toLocaleTimeString();
+    document.getElementById('lastAgent').innerText = `${codename} at ${timestamp}`;
+
+    signalDisplay.innerText = '';
+    downloadingText.style.display = 'block';
+    signalWave.innerHTML = '';
+    corruptionWarning.style.display = 'none';
+    expectedClassification = '';
+    isCorrupted = false;
+
+    setTimeout(() => {
+      downloadingText.style.display = 'none';
+      const newSig = randomSignal();
+      signalDisplay.innerText = `Incoming Signal: [${newSig}]`;
+      generateWaveform();
+    }, 800);
+  }
+
+  function generateWaveform() {
+    signalWave.innerHTML = '';
+    isCorrupted = false;
+
+    if (Math.random() < 0.15) {
+      isCorrupted = true;
+      corruptionWarning.style.display = 'block';
+      for (let i = 0; i < 32; i++) {
+        const bar = document.createElement('div');
+        bar.style.height = `${Math.floor(Math.random() * 50) + 5}px`;
+        bar.style.opacity = (0.2 + Math.random() * 0.8).toFixed(2);
+        bar.style.background = '#ff0055';
+        signalWave.appendChild(bar);
+      }
+      expectedClassification = '';
+      return;
+    }
+
+    corruptionWarning.style.display = 'none';
+
+    const roll = Math.random();
+    if (roll < 0.5) {
+      expectedClassification = 'RECLASSIFIED AS NOISE';
+    } else if (roll < 0.9) {
+      expectedClassification = 'ARCHIVED FOR REVIEW';
+    } else {
+      expectedClassification = 'ESCALATED TO OPS';
+    }
+
+    let spikeIndices = [];
+    if (expectedClassification === 'ESCALATED TO OPS') {
+      while (spikeIndices.length < 2 + Math.floor(Math.random() * 2)) {
+        const idx = Math.floor(Math.random() * 32);
+        if (!spikeIndices.includes(idx)) spikeIndices.push(idx);
+      }
+    }
+
+    for (let i = 0; i < 32; i++) {
+      const bar = document.createElement('div');
+      let height;
+
+      if (expectedClassification === 'RECLASSIFIED AS NOISE') {
+        height = Math.floor(Math.random() * 7) + 5;
+      }
+      else if (expectedClassification === 'ARCHIVED FOR REVIEW') {
+        height = Math.floor(Math.random() * 50) + 5;
+      }
+      else if (expectedClassification === 'ESCALATED TO OPS') {
+        if (spikeIndices.includes(i)) {
+          height = Math.floor(Math.random() * 10) + 45;
+        } else {
+          height = Math.floor(Math.random() * 6) + 5;
+        }
+      }
+
+      bar.style.height = `${height}px`;
+      bar.style.opacity = (0.5 + Math.random() * 0.5).toFixed(2);
+      signalWave.appendChild(bar);
+    }
+  }
+
+  function updateProgressBar() {
+    const max = 100;
+    const percent = Math.min(100, (totalSignals / max) * 100);
+    document.getElementById('progressBar').style.width = percent + '%';
+  }
+
+  function postConsole() {
+    const input = document.getElementById('consoleInput');
+    const val = input.value.trim();
+    if (!val) return;
+    const time = new Date().toLocaleTimeString();
+    consoleLog.innerHTML += `<div>[${codename} ${time}] ${val}</div>`;
+    consoleLog.scrollTop = consoleLog.scrollHeight;
+    input.value = '';
+  }
+
+  classify("RECEIVED");
+</script>
+
+</body>
+</html>
